@@ -1,0 +1,26 @@
+# --- Sinh câu trả lời: chọn 1 trong 2 (hoặc cài cả hai) ---
+# OpenRouter dùng API tương thích OpenAI -> dùng thư viện "openai".
+# Có nhiều model MIỄN PHÍ. Đây là lựa chọn mặc định.
+openai>=1.40
+
+# Claude (Anthropic). Chỉ cần khi LLM_PROVIDER=anthropic.
+# Cần bản đủ mới để chắc chắn hỗ trợ model đời mới (claude-opus-4-8).
+anthropic>=0.69
+
+# --- Web framework + server ---
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9   # bắt buộc để FastAPI nhận file upload (multipart/form-data)
+
+# --- Đọc cấu hình từ file .env ---
+python-dotenv>=1.0
+
+# --- Cơ sở dữ liệu vector (chạy local, lưu trên đĩa) ---
+chromadb>=0.5.5
+
+# --- Tạo embedding ngay trên máy, miễn phí, đa ngôn ngữ ---
+sentence-transformers>=3.0
+
+# --- Trích xuất văn bản từ file PDF / DOCX ---
+pypdf>=4.2
+python-docx>=1.1

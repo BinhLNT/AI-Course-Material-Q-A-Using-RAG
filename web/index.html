@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trợ giảng AI · Hỏi đáp tài liệu</title>
+    <style>
+      :root { --bg:#f4f6fb; --card:#fff; --primary:#2f6df6; --muted:#6b7280; --border:#e5e7eb; }
+      * { box-sizing: border-box; }
+      body { margin:0; font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+             background: var(--bg); color:#111827; }
+      header { background: var(--primary); color:#fff; padding:18px 24px; }
+      header h1 { margin:0; font-size:20px; }
+      header p { margin:4px 0 0; opacity:.9; font-size:13px; }
+      main { max-width: 860px; margin: 0 auto; padding: 20px 16px 60px; }
+      .card { background: var(--card); border:1px solid var(--border); border-radius:12px;
+              padding:16px; margin-bottom:18px; }
+      .card h2 { margin:0 0 12px; font-size:15px; }
+      .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+      input[type="file"] { flex:1; min-width:200px; }
+      input[type="text"] { flex:1; min-width:200px; padding:10px 12px; border:1px solid var(--border);
+                           border-radius:8px; font-size:14px; }
+      button { background: var(--primary); color:#fff; border:0; border-radius:8px;
+               padding:10px 16px; font-size:14px; cursor:pointer; }
+      button.secondary { background:#fff; color:var(--primary); border:1px solid var(--primary); }
+      button:disabled { opacity:.5; cursor:not-allowed; }
+      .status { font-size:13px; color:var(--muted); margin-top:10px; white-space:pre-wrap; }
+      #chat { display:flex; flex-direction:column; gap:12px; }
+      .msg { padding:12px 14px; border-radius:10px; font-size:14px; line-height:1.5; white-space:pre-wrap; }
+      .msg.user { background:#eef2ff; align-self:flex-end; max-width:85%; }
+      .msg.bot { background:#f3f4f6; align-self:flex-start; max-width:95%; }
+      .sources { margin-top:8px; font-size:12px; color:var(--muted); }
+      .sources details { margin-top:4px; }
+      .sources summary { cursor:pointer; color:var(--primary); }
+      .src-item { padding:6px 0; border-top:1px dashed var(--border); }
+      .hint { font-size:12px; color:var(--muted); margin-top:6px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>📚 Trợ giảng AI — Hỏi đáp tài liệu</h1>
+      <p>Tải tài liệu học tập lên, rồi đặt câu hỏi. AI chỉ trả lời dựa trên tài liệu của bạn.</p>
+    </header>
+
+    <main>
+      <!-- BƯỚC 1: Tải tài liệu -->
+      <section class="card">
+        <h2>1. Tải tài liệu lên</h2>
+        <div class="row">
+          <input type="file" id="fileInput" multiple accept=".pdf,.docx,.txt,.md" />
+          <button id="uploadBtn">Tải lên &amp; nạp</button>
+          <button id="resetBtn" class="secondary">Xoá dữ liệu</button>
+        </div>
+        <div class="hint">Định dạng hỗ trợ: PDF, DOCX, TXT, MD. Lần nạp đầu tiên có thể hơi lâu (tải model embedding).</div>
+        <div class="status" id="uploadStatus"></div>
+      </section>
+
+      <!-- BƯỚC 2: Hỏi đáp -->
+      <section class="card">
+        <h2>2. Hỏi đáp</h2>
+        <div id="chat"></div>
+        <div class="row" style="margin-top:12px">
+          <input type="text" id="questionInput" placeholder="Nhập câu hỏi về tài liệu…" />
+          <button id="sendBtn">Gửi</button>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      // Lịch sử hội thoại để hỗ trợ hỏi nối tiếp ("cái đó", "vậy còn...").
+      const history = [];
+
+      async function refreshStatus() {
+        try {
+          const r = await fetch("/api/status");
+          const d = await r.json();
+          $("uploadStatus").textContent =
+            `Kho hiện có ${d.chunks} đoạn (chunk). · Chế độ: ${d.mode || "?"}`;
+        } catch (_) {}
+      }
+
+      // --- Tải tài liệu lên ---
+      $("uploadBtn").onclick = async () => {
+        const files = $("fileInput").files;
+        if (!files.length) { alert("Hãy chọn ít nhất 1 file."); return; }
+        const form = new FormData();
+        for (const f of files) form.append("files", f);
+
+        $("uploadBtn").disabled = true;
+        $("uploadStatus").textContent = "Đang xử lý… (tải lên + cắt + tạo embedding)";
+        try {
+          const r = await fetch("/api/upload", { method: "POST", body: form });
+          const d = await r.json();
+          const lines = d.results.map((x) => `• ${x.filename}: ${x.status} (${x.chunks} đoạn)`);
+          $("uploadStatus").textContent = lines.join("\n") + `\n\nTổng cộng: ${d.total_chunks} đoạn.`;
+        } catch (e) {
+          $("uploadStatus").textContent = "Lỗi khi tải lên: " + e;
+        } finally {
+          $("uploadBtn").disabled = false;
+        }
+      };
+
+      // --- Xoá dữ liệu ---
+      $("resetBtn").onclick = async () => {
+        if (!confirm("Xoá toàn bộ tài liệu đã nạp?")) return;
+        await fetch("/api/reset", { method: "POST" });
+        $("chat").innerHTML = "";
+        history.length = 0;
+        refreshStatus();
+      };
+
+      // --- Hỏi đáp ---
+      function addMessage(cls, text) {
+        const div = document.createElement("div");
+        div.className = "msg " + cls;
+        div.textContent = text;
+        $("chat").appendChild(div);
+        div.scrollIntoView({ behavior: "smooth" });
+        return div;
+      }
+
+      function renderSteps(container, steps) {
+        if (!steps || !steps.length) return;
+        const box = document.createElement("div");
+        box.className = "sources";
+        const det = document.createElement("details");
+        const sum = document.createElement("summary");
+        sum.textContent = `🧠 Xem quá trình suy nghĩ (${steps.length} bước)`;
+        det.appendChild(sum);
+        for (const s of steps) {
+          const item = document.createElement("div");
+          item.className = "src-item";
+          item.textContent = s;
+          det.appendChild(item);
+        }
+        box.appendChild(det);
+        container.appendChild(box);
+      }
+
+      function renderSources(container, sources) {
+        if (!sources || !sources.length) return;
+        const box = document.createElement("div");
+        box.className = "sources";
+        const det = document.createElement("details");
+        const sum = document.createElement("summary");
+        sum.textContent = `Xem ${sources.length} nguồn tham khảo`;
+        det.appendChild(sum);
+        for (const s of sources) {
+          const item = document.createElement("div");
+          item.className = "src-item";
+          item.textContent = `[${s.label}] ${s.source} (đoạn #${s.chunk_index}): ${s.snippet}`;
+          det.appendChild(item);
+        }
+        box.appendChild(det);
+        container.appendChild(box);
+      }
+
+      async function ask() {
+        const q = $("questionInput").value.trim();
+        if (!q) return;
+        addMessage("user", q);
+        $("questionInput").value = "";
+        $("sendBtn").disabled = true;
+        const thinking = addMessage("bot", "Đang suy nghĩ…");
+        try {
+          const r = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: q, history: history }),
+          });
+          const d = await r.json();
+          const answer = d.answer || "(không có nội dung)";
+          thinking.textContent = answer;
+          renderSteps(thinking, d.steps);
+          renderSources(thinking, d.sources);
+          // Lưu vào lịch sử (giữ tối đa ~10 lượt gần nhất để gọn payload)
+          history.push({ role: "user", content: q });
+          history.push({ role: "assistant", content: answer });
+          if (history.length > 20) history.splice(0, history.length - 20);
+        } catch (e) {
+          thinking.textContent = "Lỗi: " + e;
+        } finally {
+          $("sendBtn").disabled = false;
+        }
+      }
+
+      $("sendBtn").onclick = ask;
+      $("questionInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") ask();
+      });
+
+      refreshStatus();
+    </script>
+  </body>
+</html>

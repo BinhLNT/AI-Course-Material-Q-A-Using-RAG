@@ -1,0 +1,17 @@
+# Môi trường ảo Python
+.venv/
+venv/
+
+# Cache Python
+__pycache__/
+*.pyc
+
+# Bí mật: KHÔNG bao giờ commit API key
+.env
+
+# Dữ liệu sinh ra lúc chạy (file học sinh upload + database vector)
+data/uploads/
+data/chroma/
+
+# Khác
+.DS_Store
